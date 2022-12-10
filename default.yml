@@ -1,0 +1,114 @@
+# SPDX-FileCopyrightText: 2022 Weston Schmidt <weston_schmidt@alumni.purdue.edu>
+# SPDX-License-Identifier: Apache-2.0
+---
+# Conventions:
+# This file is used as the defaults for the program.  Any value that you don't
+# need to overwrite may be commented out or deleted.
+#
+# Any __ADD_ME__ values need to be replaced with real values for the program
+# to work.
+#
+# Any optional values are up to you how you want to configure the program.
+#
+# render_order
+# render_order is an arbitrary number that you set.  When the page is rendered
+# the output of the sections each has a render_order assigned to it.  The
+# sections are sorted by render_order from lowest number to highest number.
+
+# The Github URL to use.
+url: https://api.github.com/graphql
+
+# The Github login, org or owner that owns the project to interact with.
+owner: # __ADD_ME__
+
+# The gitub project number to interact with.
+project_number:  # __ADD_ME__
+
+# The output directory to place the new status reports at.
+output_directory: .
+
+# The Github token to use for accessing the project.  ${GH_TOKEN} pulls the
+# value from the environment variable of the name GH_TOKEN.
+token: ${GH_TOKEN}
+
+# The tuning parameters allow adjusting the queries to the Github API.  There
+# are limits about the number of records that can be returned and this allows
+# tuning them if needed.  For most use cases these values will not need to be
+# changed.
+tuning:
+  # The maximum number of items/issues to fetch in one call.  This value can be
+  # as small as 1 as the code will automatically page through all issues.
+  issue_count: 100
+
+  # The maximum number of labels to pull for each issue or pull request.  This
+  # value is NOT paged by the logic and may need to be larger if you have lots
+  # of tags on a single item.
+  label_count: 20
+
+  # The maximum number of field values to pull for each issue or pull request.
+  # This value is NOT paged by the logic and may need to be larger if you have
+  # lots of tags on a single item.
+  field_value_count: 20
+
+# The label section defines if there is a list of labels and what the render
+# order value should be.
+label_section:
+  # If the label section should be enabled.  Boolean, true/false.
+  #enabled: true
+
+  # The page rendering order.  Integer.
+  #render_order: 100
+
+# The unclassified section that represents any items that didn't fit into a user
+# defined section.
+unclassified:
+  # The name of the unclassified items section to output.
+  name: Unclassified Items
+
+  # The page rendering order.  Integer.
+  render_order: 1000
+
+  # If the section should be omitted if empty.  Boolean, true/false.
+  omit_if_empty: true
+
+# The list of user defined sections.
+#
+# As items match a section they are removed from the list being processed.  The
+# order the list is defined is the order the items are matched against.  If an
+# item may match multiple sections, it will only show up in the first matched
+# section.
+sections:
+  # The name of the section to output.
+  #- name:
+
+    # The page rendering order.  Integer
+    #render_order: 
+
+    # If the section should be omitted if empty.  Boolean, true/false.
+    #omit_if_empty: true
+
+    # The group of matching criteria.  These are treated as a logical OR, so if
+    # any criteria match then the item is a match.
+    match_on:
+      # A list of labels to match against.  Labels are matched ignoring their
+      # case to make useage easier.
+      #labels: [ label1, label2 ]
+
+      # A list of prefixes to examine the commit messages for.  Only exact matches
+      # will be considered as a match.  Whitespaces are trimmed from both the
+      # prefixes and the message before comparison to help make usage easier.
+      #prefixes: [ prefix1, prefix2 ]
+
+      # Branches provide a way to group issues associated with a target repo and
+      # branch.  It is a list.
+      branches:
+        # The org name / login / owner of the repo of interest.
+        #- org: foo
+
+          # The repo name to examine.
+          #repo: bar
+
+          # The branch name to examine.  This value is a golang regex value.
+          # See: https://github.com/google/re2/wiki/Syntax for more details.
+          #branch: main
+
