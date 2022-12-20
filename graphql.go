@@ -23,8 +23,7 @@ import (
 // FieldCommon is a graphql focused structure for collecting the data.
 type FieldCommon struct {
 	Ignored struct {
-		Name      string
-		UpdatedAt time.Time
+		Name string
 	} `graphql:"... on ProjectV2FieldCommon"`
 }
 
@@ -40,10 +39,9 @@ func (v FieldTextValue) Get() Field {
 		return Field{}
 	}
 	return Field{
-		Type:      FIELD_TEXT,
-		UpdatedAt: v.Field.Ignored.UpdatedAt,
-		Name:      v.Field.Ignored.Name,
-		Text:      *v.Text,
+		Type: FIELD_TEXT,
+		Name: v.Field.Ignored.Name,
+		Text: *v.Text,
 	}
 }
 
@@ -59,10 +57,9 @@ func (v FieldDateValue) Get() Field {
 		return Field{}
 	}
 	return Field{
-		Type:      FIELD_DATE,
-		UpdatedAt: v.Field.Ignored.UpdatedAt,
-		Name:      v.Field.Ignored.Name,
-		Date:      *v.Date,
+		Type: FIELD_DATE,
+		Name: v.Field.Ignored.Name,
+		Date: *v.Date,
 	}
 }
 
@@ -78,10 +75,9 @@ func (v FieldNumberValue) Get() Field {
 		return Field{}
 	}
 	return Field{
-		Type:      FIELD_NUMBER,
-		UpdatedAt: v.Field.Ignored.UpdatedAt,
-		Name:      v.Field.Ignored.Name,
-		Number:    *v.Number,
+		Type:   FIELD_NUMBER,
+		Name:   v.Field.Ignored.Name,
+		Number: *v.Number,
 	}
 }
 
@@ -97,10 +93,9 @@ func (v FieldSingleSelectValue) Get() Field {
 		return Field{}
 	}
 	return Field{
-		Type:      FIELD_TEXT,
-		UpdatedAt: v.Field.Ignored.UpdatedAt,
-		Name:      v.Field.Ignored.Name,
-		Text:      *v.Name,
+		Type: FIELD_TEXT,
+		Name: v.Field.Ignored.Name,
+		Text: *v.Name,
 	}
 }
 
@@ -120,7 +115,6 @@ func (v FieldIterationValue) Get() Field {
 	}
 	return Field{
 		Type:        FIELD_ITERATION,
-		UpdatedAt:   v.Field.Ignored.UpdatedAt,
 		Name:        v.Field.Ignored.Name,
 		Duration:    time.Hour * 24 * time.Duration(v.Duration),
 		IterationId: v.IterationId,
@@ -141,17 +135,10 @@ type FieldLabelValue struct {
 	} `graphql:"labels(first: $labelCount)"`
 }
 
-// DraftIssue is a graphql focused structure for collecting date field data.
-type DraftIssue struct {
-	DraftIssue struct {
-		UpdatedAt *time.Time
-	} `graphql:"... on DraftIssue"`
-}
-
 // Issue is a graphql focused structure for collecting date field data.
 type Issue struct {
 	Issue struct {
-		UpdatedAt  *time.Time
+		ClosedAt   *time.Time
 		Number     int
 		URL        string
 		Repository struct {
@@ -165,7 +152,8 @@ type Issue struct {
 // PullRequest is a graphql focused structure for collecting date field data.
 type PullRequest struct {
 	PullRequest struct {
-		UpdatedAt   *time.Time
+		ClosedAt    *time.Time
+		MergedAt    *time.Time
 		Number      int
 		URL         string
 		BaseRefName string
@@ -191,7 +179,6 @@ type GqlItem struct {
 			TextValue      FieldTextValue         `graphql:"... on ProjectV2ItemFieldTextValue"`
 		}
 	} `graphql:"fieldValues(first: $fieldValuesCount)"`
-	DI    DraftIssue  `graphql:"di:content"`
 	Issue Issue       `graphql:"iss:content"`
 	PR    PullRequest `graphql:"pr:content"`
 }
@@ -205,12 +192,8 @@ func (g GqlItem) ToClean() Item {
 		Fields:   make(map[string]Field, len(g.FieldValues.Nodes)),
 	}
 
-	if g.DI.DraftIssue.UpdatedAt != nil {
-		rv.UpdatedAt = *g.DI.DraftIssue.UpdatedAt
-		rv.ItemType = "DRAFT_ISSUE"
-	}
-	if g.Issue.Issue.UpdatedAt != nil {
-		rv.UpdatedAt = *g.Issue.Issue.UpdatedAt
+	if g.Issue.Issue.ClosedAt != nil {
+		rv.DoneAt = *g.Issue.Issue.ClosedAt
 		rv.ItemType = "ISSUE"
 		rv.Number = g.Issue.Issue.Number
 		rv.URL = g.Issue.Issue.URL
@@ -218,8 +201,12 @@ func (g GqlItem) ToClean() Item {
 		rv.Repo.Slug = g.Issue.Issue.Repository.NameWithOwner
 		rv.Repo.URL = g.Issue.Issue.Repository.URL
 	}
-	if g.PR.PullRequest.UpdatedAt != nil {
-		rv.UpdatedAt = *g.PR.PullRequest.UpdatedAt
+	if g.PR.PullRequest.MergedAt != nil || g.PR.PullRequest.ClosedAt != nil {
+		if g.PR.PullRequest.MergedAt != nil {
+			rv.DoneAt = *g.PR.PullRequest.MergedAt
+		} else {
+			rv.DoneAt = *g.PR.PullRequest.ClosedAt
+		}
 		rv.ItemType = "PR"
 		rv.Number = g.PR.PullRequest.Number
 		rv.URL = g.PR.PullRequest.URL
@@ -261,10 +248,10 @@ func (g GqlItem) ToClean() Item {
 
 // fetchProjectInfo uses the configuration provided owner/org and project number
 // and gets the id to use.
-func fetchProjectInfo(cfg Config, client *gql.Client) (string, error) {
+func fetchProjectInfo(owner string, project int, client *gql.Client) (string, error) {
 	vars := map[string]any{
-		"owner":  cfg.Owner,
-		"number": cfg.Project,
+		"owner":  owner,
+		"number": project,
 	}
 	var query struct {
 		Organization struct {
@@ -274,13 +261,6 @@ func fetchProjectInfo(cfg Config, client *gql.Client) (string, error) {
 		} `graphql:"organization(login: $owner)"`
 	}
 
-	if cfg.Debug {
-		str, err := gql.ConstructQuery(&query, vars)
-		if err != nil {
-			return "", err
-		}
-		fmt.Printf("Fetching Project Info Request:\n%s\n", str)
-	}
 	if err := client.Query(context.Background(), &query, vars); err != nil {
 		return "", err
 	}
@@ -288,13 +268,13 @@ func fetchProjectInfo(cfg Config, client *gql.Client) (string, error) {
 	return query.Organization.ProjectV2.Id, nil
 }
 
-func fetchIssues(cfg Config, id string, client *gql.Client) (Items, error) {
+func fetchIssues(id string, client *gql.Client, issueCount, labelCount, fvCount int) (Items, error) {
 	var items Items
 
 	vars := map[string]any{
-		"count":            cfg.Tuning.IssueCount,
-		"labelCount":       cfg.Tuning.LabelCount,
-		"fieldValuesCount": cfg.Tuning.FieldValueCount,
+		"count":            issueCount,
+		"labelCount":       labelCount,
+		"fieldValuesCount": fvCount,
 		"projectId":        gql.ID(id),
 		"after":            (*string)(nil),
 	}
@@ -315,13 +295,6 @@ func fetchIssues(cfg Config, id string, client *gql.Client) (Items, error) {
 			} `graphql:"node(id: $projectId)"`
 		}
 
-		if cfg.Debug {
-			str, err := gql.ConstructQuery(&query, vars)
-			if err != nil {
-				return nil, err
-			}
-			fmt.Printf("Fetching Issues Request:\n%s\n", str)
-		}
 		if err := client.Query(context.Background(), &query, vars); err != nil {
 			return nil, err
 		}
@@ -337,7 +310,40 @@ func fetchIssues(cfg Config, id string, client *gql.Client) (Items, error) {
 	return items, nil
 }
 
-func archiveItem(cfg Config, projectId, itemId string, client *gql.Client) error {
+func fetchItemsById(itemIds []string, client *gql.Client, issueCount, labelCount, fvCount int) (Items, error) {
+	var items Items
+
+	done := 0
+	for _, itemId := range itemIds {
+		vars := map[string]any{
+			"labelCount":       labelCount,
+			"fieldValuesCount": fvCount,
+			"id":               gql.ID(itemId),
+		}
+
+		var query struct {
+			Node struct {
+				ProjectV2Item struct {
+					GqlItem
+				} `graphql:"... on ProjectV2Item"`
+			} `graphql:"node(id: $id)"`
+		}
+
+		if err := client.Query(context.Background(), &query, vars); err != nil {
+			return nil, err
+		}
+
+		items = append(items, query.Node.ProjectV2Item.ToClean())
+		done++
+		if done%10 == 0 {
+			fmt.Printf("Done: %d/%d\n", done, len(itemIds))
+		}
+	}
+
+	return items, nil
+}
+
+func archiveItem(projectId, itemId string, client *gql.Client) error {
 	vars := map[string]any{
 		"projectId": gql.ID(projectId),
 		"id":        gql.ID(itemId),
@@ -346,34 +352,6 @@ func archiveItem(cfg Config, projectId, itemId string, client *gql.Client) error
 		ArchiveProjectV2ItemPayload struct {
 			ClientMutationId string
 		} `graphql:"archiveProjectV2Item(input: {projectId: $projectId, itemId: $id})"`
-	}
-	if cfg.Debug {
-		str, err := gql.ConstructMutation(&mutation, vars)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("Archiving an Item Request:\n%s\n", str)
-	}
-	return client.Mutate(context.Background(), &mutation, vars)
-}
-
-func unarchiveItem(cfg Config, projectId, itemId string, client *gql.Client) error {
-	vars := map[string]any{
-		"projectId": gql.ID(projectId),
-		"id":        gql.ID(itemId),
-	}
-	var mutation struct {
-		ArchiveProjectV2ItemPayload struct {
-			ClientMutationId string
-		} `graphql:"unarchiveProjectV2Item(input: {projectId: $projectId, itemId: $id})"`
-	}
-
-	if cfg.Debug {
-		str, err := gql.ConstructMutation(&mutation, vars)
-		if err != nil {
-			return err
-		}
-		fmt.Printf("Unarchiving an Item Request:\n%s\n", str)
 	}
 	return client.Mutate(context.Background(), &mutation, vars)
 }

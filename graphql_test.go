@@ -6,6 +6,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -42,23 +43,20 @@ const (
                 },
 				{
                   "field": {
-                    "name": "Title",
-                    "updatedAt": "2022-08-05T20:19:08Z"
+                    "name": "Title"
                   },
                   "text": "An example item title."
                 },
 				{
                   "field": {
-                    "name": "Status",
-                    "updatedAt": "2022-11-27T22:39:36Z"
+                    "name": "Status"
                   },
                   "name": "Todo"
                 }
               ]
             },
-            "di": {},
             "iss": {
-              "updatedAt": "2022-08-04T22:16:25Z",
+              "closedAt": "2022-08-04T22:16:25Z",
               "number": 88,
               "url": "https://github.com/org/repo/issues/88",
               "repository": {
@@ -78,6 +76,7 @@ const (
     }
   }
 }`
+
 	issue89 = `
 {
   "data": {
@@ -91,15 +90,13 @@ const (
               "nodes": [
 				{
                   "field": {
-                    "name": "Goal",
-                    "updatedAt": "2022-08-05T21:19:08Z"
+                    "name": "Goal"
                   },
 				  "date": "2022-08-05T20:19:08Z"
                 },
 				{
                   "field": {
-                    "name": "Iteration",
-                    "updatedAt": "2022-08-05T21:19:08Z"
+                    "name": "Iteration"
                   },
 				  "duration": 14,
 				  "iterationId": "random id",
@@ -117,30 +114,26 @@ const (
                 },
 				{
                   "field": {
-                    "name": "Title",
-                    "updatedAt": "2022-08-05T20:19:08Z"
+                    "name": "Title"
                   },
                   "text": "An example item title."
                 },
 				{
                   "field": {
-                    "name": "Priority",
-                    "updatedAt": "2022-08-05T20:19:08Z"
+                    "name": "Priority"
                   },
 				  "number": 123.456
                 },
 				{
                   "field": {
-                    "name": "Status",
-                    "updatedAt": "2022-11-27T22:39:36Z"
+                    "name": "Status"
                   },
                   "name": "Todo"
                 }
               ]
             },
-            "di": {},
             "iss": {
-              "updatedAt": "2022-08-04T22:16:25Z",
+              "closedAt": "2022-08-04T22:16:25Z",
               "number": 89,
               "url": "https://github.com/org/repo/issues/89",
               "repository": {
@@ -175,26 +168,68 @@ const (
                 {},
                 {
                   "field": {
-                    "name": "Title",
-                    "updatedAt": "2022-08-05T20:19:08Z"
+                    "name": "Title"
                   },
                   "text": "Update Something"
                 },
                 {
                   "field": {
-                    "name": "Status",
-                    "updatedAt": "2022-11-27T22:39:36Z"
+                    "name": "Status"
                   },
                   "name": "Todo"
                 }
               ]
             },
-            "di": {},
             "iss": {},
             "pr": {
-              "updatedAt": "2022-12-01T09:01:53Z",
+              "closedAt": "2022-12-01T09:01:53Z",
               "number": 23,
               "url": "https://github.com/org/repo/pull/23",
+              "baseRefName": "main",
+              "repository": {
+                "name": "repo",
+                "nameWithOwner": "org/repo",
+                "url": "https://github.com/org/repo"
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}`
+
+	pr24 = `
+{
+  "data": {
+    "node": {
+      "items": {
+        "nodes": [
+          {
+            "id": "id124",
+            "isArchived": false,
+            "fieldValues": {
+              "nodes": [
+                {},
+                {
+                  "field": {
+                    "name": "Title"
+                  },
+                  "text": "Update Something"
+                },
+                {
+                  "field": {
+                    "name": "Status"
+                  },
+                  "name": "Todo"
+                }
+              ]
+            },
+            "iss": {},
+            "pr": {
+              "mergedAt": "2022-12-01T09:01:53Z",
+              "number": 24,
+              "url": "https://github.com/org/repo/pull/24",
               "baseRefName": "main",
               "repository": {
                 "name": "repo",
@@ -214,33 +249,30 @@ var itemIssue88 = Item{
 	ID: "some-id",
 	Fields: map[string]Field{
 		"Title": Field{
-			Type:      FIELD_TEXT,
-			Name:      "Title",
-			UpdatedAt: mustParseTime("2022-08-05T20:19:08Z"),
-			Text:      "An example item title.",
+			Type: FIELD_TEXT,
+			Name: "Title",
+			Text: "An example item title.",
 		},
 		"Status": Field{
-			Type:      FIELD_TEXT,
-			Name:      "Status",
-			UpdatedAt: mustParseTime("2022-11-27T22:39:36Z"),
-			Text:      "Todo",
+			Type: FIELD_TEXT,
+			Name: "Status",
+			Text: "Todo",
 		},
 	},
-	Labels:    []string{"deployment"},
-	UpdatedAt: mustParseTime("2022-08-04T22:16:25Z"),
-	ItemType:  "ISSUE",
-	Number:    88,
-	URL:       "https://github.com/org/repo/issues/88",
+	Labels:   []string{"deployment"},
+	DoneAt:   mustParseTime("2022-08-04T22:16:25Z"),
+	ItemType: "ISSUE",
+	Number:   88,
+	URL:      "https://github.com/org/repo/issues/88",
 	Repo: struct {
 		Name   string
 		Slug   string
 		URL    string
 		Branch string
 	}{
-		Name:   "repo",
-		Slug:   "org/repo",
-		URL:    "https://github.com/org/repo",
-		Branch: "",
+		Name: "repo",
+		Slug: "org/repo",
+		URL:  "https://github.com/org/repo",
 	},
 }
 
@@ -248,44 +280,69 @@ var itemIssue89 = Item{
 	ID: "some-id",
 	Fields: map[string]Field{
 		"Title": Field{
-			Type:      FIELD_TEXT,
-			Name:      "Title",
-			UpdatedAt: mustParseTime("2022-08-05T20:19:08Z"),
-			Text:      "An example item title.",
+			Type: FIELD_TEXT,
+			Name: "Title",
+			Text: "An example item title.",
 		},
 		"Iteration": Field{
 			Type:        FIELD_ITERATION,
 			Name:        "Iteration",
-			UpdatedAt:   mustParseTime("2022-08-05T21:19:08Z"),
 			Title:       "title",
 			Duration:    time.Hour * 24 * 14,
 			IterationId: "random id",
 			StartDate:   mustParseTime("2022-08-05T20:19:08Z"),
 		},
 		"Goal": Field{
-			Type:      FIELD_DATE,
-			Name:      "Goal",
-			UpdatedAt: mustParseTime("2022-08-05T21:19:08Z"),
-			Date:      mustParseTime("2022-08-05T20:19:08Z"),
+			Type: FIELD_DATE,
+			Name: "Goal",
+			Date: mustParseTime("2022-08-05T20:19:08Z"),
 		},
 		"Priority": Field{
-			Type:      FIELD_NUMBER,
-			Name:      "Priority",
-			UpdatedAt: mustParseTime("2022-08-05T20:19:08Z"),
-			Number:    123.456,
+			Type:   FIELD_NUMBER,
+			Name:   "Priority",
+			Number: 123.456,
 		},
 		"Status": Field{
-			Type:      FIELD_TEXT,
-			Name:      "Status",
-			UpdatedAt: mustParseTime("2022-11-27T22:39:36Z"),
-			Text:      "Todo",
+			Type: FIELD_TEXT,
+			Name: "Status",
+			Text: "Todo",
 		},
 	},
-	Labels:    []string{"deployment"},
-	UpdatedAt: mustParseTime("2022-08-04T22:16:25Z"),
-	ItemType:  "ISSUE",
-	Number:    89,
-	URL:       "https://github.com/org/repo/issues/89",
+	Labels:   []string{"deployment"},
+	DoneAt:   mustParseTime("2022-08-04T22:16:25Z"),
+	ItemType: "ISSUE",
+	Number:   89,
+	URL:      "https://github.com/org/repo/issues/89",
+	Repo: struct {
+		Name   string
+		Slug   string
+		URL    string
+		Branch string
+	}{
+		Name: "repo",
+		Slug: "org/repo",
+		URL:  "https://github.com/org/repo",
+	},
+}
+
+var itemPr23 = Item{
+	ID: "id123",
+	Fields: map[string]Field{
+		"Title": Field{
+			Type: FIELD_TEXT,
+			Name: "Title",
+			Text: "Update Something",
+		},
+		"Status": Field{
+			Type: FIELD_TEXT,
+			Name: "Status",
+			Text: "Todo",
+		},
+	},
+	DoneAt:   mustParseTime("2022-12-01T09:01:53Z"),
+	ItemType: "PR",
+	Number:   23,
+	URL:      "https://github.com/org/repo/pull/23",
 	Repo: struct {
 		Name   string
 		Slug   string
@@ -295,30 +352,28 @@ var itemIssue89 = Item{
 		Name:   "repo",
 		Slug:   "org/repo",
 		URL:    "https://github.com/org/repo",
-		Branch: "",
+		Branch: "main",
 	},
 }
 
-var itemPr23 = Item{
-	ID: "id123",
+var itemPr24 = Item{
+	ID: "id124",
 	Fields: map[string]Field{
 		"Title": Field{
-			Type:      FIELD_TEXT,
-			Name:      "Title",
-			UpdatedAt: mustParseTime("2022-08-05T20:19:08Z"),
-			Text:      "Update Something",
+			Type: FIELD_TEXT,
+			Name: "Title",
+			Text: "Update Something",
 		},
 		"Status": Field{
-			Type:      FIELD_TEXT,
-			Name:      "Status",
-			UpdatedAt: mustParseTime("2022-11-27T22:39:36Z"),
-			Text:      "Todo",
+			Type: FIELD_TEXT,
+			Name: "Status",
+			Text: "Todo",
 		},
 	},
-	UpdatedAt: mustParseTime("2022-12-01T09:01:53Z"),
-	ItemType:  "PR",
-	Number:    23,
-	URL:       "https://github.com/org/repo/pull/23",
+	DoneAt:   mustParseTime("2022-12-01T09:01:53Z"),
+	ItemType: "PR",
+	Number:   24,
+	URL:      "https://github.com/org/repo/pull/24",
 	Repo: struct {
 		Name   string
 		Slug   string
@@ -360,6 +415,10 @@ func TestFetchIssues(t *testing.T) {
 			description: "basic test pr",
 			responses:   []string{pr23},
 			expect:      Items{itemPr23},
+		}, {
+			description: "basic test pr alt date",
+			responses:   []string{pr24},
+			expect:      Items{itemPr24},
 		},
 	}
 
@@ -370,13 +429,18 @@ func TestFetchIssues(t *testing.T) {
 
 			var i int
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				//body, _ := io.ReadAll(r.Body)
+				//fmt.Println(string(body))
+				io.Copy(io.Discard, r.Body)
+				r.Body.Close()
+
 				require.True(i < len(tc.responses))
 				fmt.Fprintln(w, tc.responses[i])
 				i++
 			}))
 			defer ts.Close()
 
-			items, err := fetchIssues(Config{}, "id", gql.NewClient(ts.URL, nil))
+			items, err := fetchIssues("id", gql.NewClient(ts.URL, nil), 10, 10, 10)
 
 			if errors.Is(tc.expectErr, unknown) {
 				assert.Nil(items)
@@ -384,7 +448,124 @@ func TestFetchIssues(t *testing.T) {
 				return
 			}
 
+			assert.NoError(err)
 			assert.Empty(cmp.Diff(tc.expect, items))
+		})
+	}
+}
+
+func TestFetchProjectInfo(t *testing.T) {
+	unknown := errors.New("unknown")
+	tests := []struct {
+		description string
+		owner       string
+		project     int
+		responses   []string
+		expect      string
+		expectErr   error
+	}{
+		{
+			description: "basic test issue",
+			owner:       "example",
+			project:     55,
+			responses: []string{`
+{
+  "data": {
+    "organization": {
+      "projectV2": {
+        "id": "projectId"
+      }
+    }
+  }
+}`,
+			},
+			expect: "projectId",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.description, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+
+			var i int
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				//body, _ := io.ReadAll(r.Body)
+				//fmt.Println(string(body))
+				io.Copy(io.Discard, r.Body)
+				r.Body.Close()
+
+				require.True(i < len(tc.responses))
+				fmt.Fprintln(w, tc.responses[i])
+				i++
+			}))
+			defer ts.Close()
+
+			got, err := fetchProjectInfo(tc.owner, tc.project, gql.NewClient(ts.URL, nil))
+
+			if errors.Is(tc.expectErr, unknown) {
+				assert.Equal("", got)
+				assert.Error(err)
+				return
+			}
+
+			assert.NoError(err)
+			assert.Equal(tc.expect, got)
+		})
+	}
+}
+
+func TestArchiveItem(t *testing.T) {
+	unknown := errors.New("unknown")
+	tests := []struct {
+		description string
+		project     string
+		item        string
+		responses   []string
+		expectErr   error
+	}{
+		{
+			description: "basic test issue",
+			project:     "id-55",
+			item:        "item3",
+			responses: []string{`
+{
+	"data": {
+		"archiveProjectV2Item": {
+			"clientMutationId":null
+		}
+	}
+}`,
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.description, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+
+			var i int
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				//body, _ := io.ReadAll(r.Body)
+				//fmt.Println(string(body))
+				io.Copy(io.Discard, r.Body)
+				r.Body.Close()
+
+				require.True(i < len(tc.responses))
+				fmt.Fprintln(w, tc.responses[i])
+				i++
+			}))
+			defer ts.Close()
+
+			err := archiveItem(tc.project, tc.item, gql.NewClient(ts.URL, nil))
+
+			if errors.Is(tc.expectErr, unknown) {
+				assert.Error(err)
+				return
+			}
+
+			assert.NoError(err)
 		})
 	}
 }

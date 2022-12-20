@@ -1,3 +1,5 @@
 status-reportr
 *.json
 *.out
+*.sh
+*.yml

@@ -24,12 +24,15 @@ owner: # __ADD_ME__
 # The gitub project number to interact with.
 project_number:  # __ADD_ME__
 
+# The team name to attribute the work to.
+team: # __ADD_ME__
+
 # The output directory to place the new status reports at.
 output_directory: .
 
 # The Github token to use for accessing the project.  ${GH_TOKEN} pulls the
 # value from the environment variable of the name GH_TOKEN.
-token: ${GH_TOKEN}
+token ((secret)): ${GH_TOKEN}
 
 # The tuning parameters allow adjusting the queries to the Github API.  There
 # are limits about the number of records that can be returned and this allows

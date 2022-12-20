@@ -4,23 +4,24 @@
 package main
 
 import (
-	"regexp"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/ryanuber/go-glob"
 )
 
 // Item represents a github issue, draft issue or pr in an easier to use form.
 type Item struct {
-	ID        string
-	Archived  bool
-	Fields    map[string]Field
-	Labels    []string
-	UpdatedAt time.Time
-	ItemType  string // ISSUE, DRAFT_ISSUE, PR
-	Number    int
-	URL       string
-	Repo      struct {
+	ID       string
+	Archived bool
+	Fields   map[string]Field
+	Labels   []string
+	DoneAt   time.Time
+	ItemType string // ISSUE, PR
+	Number   int
+	URL      string
+	Repo     struct {
 		Name   string
 		Slug   string
 		URL    string
@@ -36,26 +37,22 @@ func (it Item) IsDone() bool {
 	return false
 }
 
-// DoneAt returns the time the item was completed at.
-func (it Item) DoneAt() time.Time {
+// Done returns the time the item was completed at.
+func (it Item) Done() time.Time {
 	if status, ok := it.Fields["Status"]; ok {
 		if status.Type == FIELD_TEXT && "done" == strings.ToLower(status.Text) {
-			return it.UpdatedAt
+			return it.DoneAt
 		}
 	}
 	return time.Time{}
 }
 
-// HasLabel returns if the item has this label.  Case is ignored for simplicity.
-// Additionally, the "*" character is a wildcard and matches everything.
+// HasLabel returns if the item has this label.
 func (it Item) HasLabel(l string) bool {
 	l = strings.TrimSpace(l)
-	l = strings.ToLower(l)
-	if l == "*" {
-		return true
-	}
+
 	for _, label := range it.Labels {
-		if strings.ToLower(strings.TrimSpace(label)) == l {
+		if glob.Glob(l, strings.TrimSpace(label)) {
 			return true
 		}
 	}
@@ -64,24 +61,21 @@ func (it Item) HasLabel(l string) bool {
 
 // HasPrefix returns if the item title prefix matches the one specified.
 func (it Item) HasPrefix(prefix string) bool {
-	prefix = strings.TrimSpace(prefix)
-	title := it.Title()
-	title = strings.TrimSpace(title)
-	return strings.HasPrefix(title, prefix)
+	return glob.Glob(
+		strings.TrimSpace(prefix)+"*",
+		strings.TrimSpace(it.Title()),
+	)
 }
 
 // IsBranch returns if the item is associated with the specified repo/branch.
-// The "*" is a wildcard and matches everything.
-func (it Item) IsBranch(org, repo string, branch *regexp.Regexp) bool {
-	org = strings.TrimSpace(org)
-	repo = strings.TrimSpace(repo)
-	slug := org + "/" + repo
+func (it Item) IsBranch(org, repo, branch string) bool {
+	slug := strings.TrimSpace(org) + "/" + strings.TrimSpace(repo)
+	branch = strings.TrimSpace(branch)
 
-	if it.Repo.Slug != slug {
-		return false
-	}
-
-	return branch.MatchString(it.Repo.Branch)
+	return len(it.Repo.Slug) > 0 &&
+		len(it.Repo.Branch) > 0 &&
+		glob.Glob(slug, strings.TrimSpace(it.Repo.Slug)) &&
+		glob.Glob(branch, strings.TrimSpace(it.Repo.Branch))
 }
 
 // Title returns the title of the item, or the empty string.
@@ -105,9 +99,8 @@ const (
 // Field provides a single record that can represent any of the data types that
 // can be present.
 type Field struct {
-	Type      int
-	Name      string
-	UpdatedAt time.Time
+	Type int
+	Name string
 
 	// One of these is valid.
 	Date   time.Time
@@ -134,7 +127,7 @@ func (list Items) GetDone() Items {
 	}
 
 	sort.SliceStable(done, func(i, j int) bool {
-		return done[i].DoneAt().Before(done[j].DoneAt())
+		return done[i].Done().Before(done[j].Done())
 	})
 
 	return done
@@ -144,7 +137,7 @@ func (list Items) GetDone() Items {
 func (list Items) GetOlder(when time.Time) Items {
 	var done Items
 	for _, item := range list {
-		if at := item.DoneAt(); !at.Equal(time.Time{}) {
+		if at := item.Done(); !at.Equal(time.Time{}) {
 			if at.Before(when) || at.Equal(when) {
 				done = append(done, item)
 			}
@@ -163,13 +156,12 @@ func (list Items) GetInRange(start, end time.Time) Items {
 
 	var done Items
 	for _, item := range list {
-		if at := item.DoneAt(); !at.Equal(time.Time{}) {
-			switch {
-			case at.Before(end) && at.After(start):
-				done = append(done, item)
-			case at.Equal(start):
-				done = append(done, item)
-			}
+		at := item.Done()
+		switch {
+		case at.Before(end) && at.After(start):
+			done = append(done, item)
+		case at.Equal(start):
+			done = append(done, item)
 		}
 	}
 	return done
@@ -221,7 +213,7 @@ func (list Items) ExtractByPrefixes(prefixes ...string) (matching, remaining Ite
 
 // ExtractByBranch returns the subset list of items have a matching branch, and
 // a separate list of left over items.
-func (list Items) ExtractByBranch(org, repo string, branch *regexp.Regexp) (matching, remaining Items) {
+func (list Items) ExtractByBranch(org, repo, branch string) (matching, remaining Items) {
 	for _, item := range list {
 		if item.IsBranch(org, repo, branch) {
 			matching = append(matching, item)

@@ -7,6 +7,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -21,7 +22,10 @@ import (
 	gql "github.com/hasura/go-graphql-client"
 	"github.com/mitchellh/mapstructure"
 	"golang.org/x/oauth2"
+	"gopkg.in/dealancer/validate.v2"
 )
+
+var errConfig = errors.New("invalid configuration value")
 
 //go:embed default.yml
 var defaultConfig string
@@ -57,13 +61,15 @@ func wrapped() error {
 			goschtalt.FormatAs("yml"),
 		),
 		goschtalt.DefaultUnmarshalOptions(
+			goschtalt.WithValidator(validate.Validate),
+			goschtalt.ErrorUnused(),
 			goschtalt.WeaklyTypedInput(),
+			goschtalt.TagName("yaml"),
 			goschtalt.DecodeHook(
 				mapstructure.StringToTimeDurationHookFunc(),
 			),
 		),
-		goschtalt.AddBuffer("default.000.yml", []byte(defaultConfig), goschtalt.AsDefault()),
-		goschtalt.AddValue("default.001", "", &Config{Debug: cli.Debug}, goschtalt.AsDefault()),
+		goschtalt.AddBuffer("default.yml", []byte(defaultConfig), goschtalt.AsDefault()),
 		goschtalt.AddJumbled(os.DirFS("/"), os.DirFS("."), cli.Files...),
 		goschtalt.ExpandEnv(),
 		goschtalt.AutoCompile(),
@@ -89,11 +95,10 @@ func wrapped() error {
 		return err
 	}
 
-	client := login(cfg)
-	client = client.WithDebug(true)
+	cfg.Debug = cli.Debug
 
 	var items Items
-	if len(cli.CacheFile) > 0 {
+	if len(cli.CacheFile) > 0 && fileExist(cli.CacheFile) {
 		buf, err := os.ReadFile(cli.CacheFile)
 		if err == nil {
 			err := json.Unmarshal(buf, &items)
@@ -104,12 +109,18 @@ func wrapped() error {
 		}
 	} else {
 		fmt.Println("Fetching from GH")
-		id, err := fetchProjectInfo(cfg, client)
+		client := login(cfg)
+		client = client.WithDebug(true)
+
+		id, err := fetchProjectInfo(cfg.Owner, cfg.Project, client)
 		if err != nil {
 			return err
 		}
 
-		items, err = fetchIssues(cfg, id, client)
+		items, err = fetchIssues(id, client,
+			cfg.Tuning.IssueCount,
+			cfg.Tuning.LabelCount,
+			cfg.Tuning.FieldValueCount)
 		if err != nil {
 			return err
 		}
@@ -143,12 +154,15 @@ func wrapped() error {
 	}
 
 	if !cli.DryRun {
-		id, err := fetchProjectInfo(cfg, client)
+		client := login(cfg)
+		client = client.WithDebug(true)
+
+		id, err := fetchProjectInfo(cfg.Owner, cfg.Project, client)
 		if err != nil {
 			return err
 		}
 
-		err = archive(cfg, id, client, weeks)
+		err = archive(id, client, weeks)
 		if err != nil {
 			return err
 		}
@@ -156,46 +170,11 @@ func wrapped() error {
 	return nil
 }
 
-type WeeklyItems struct {
-	Items Items
-	Start time.Time
-	End   time.Time
-}
-
-func splitByWeeks(list Items, now time.Time) []WeeklyItems {
-	var weeks []WeeklyItems
-
-	end := getClosestSunday(now)
-	start := getPreviousSunday(end)
-
-	list = list.GetOlder(start)
-	for len(list) > 0 {
-		issues := list.GetInRange(start, end)
-		list = list.GetOlder(start)
-		weeks = append(weeks, WeeklyItems{
-			Items: issues,
-			Start: start,
-			End:   end,
-		})
-
-		end = start
-		start = getPreviousSunday(end)
+func fileExist(file string) bool {
+	if _, err := os.Stat(file); err == nil {
+		return true
 	}
-
-	return weeks
-}
-
-func getClosestSunday(now time.Time) time.Time {
-	day := now.Weekday()
-	tmp := now.AddDate(0, 0, -1*int(day))
-	y := tmp.Year()
-	m := tmp.Month()
-	d := tmp.Day()
-	return time.Date(y, m, d, 0, 0, 0, 0, time.UTC)
-}
-
-func getPreviousSunday(when time.Time) time.Time {
-	return when.AddDate(0, 0, -7)
+	return false
 }
 
 func login(cfg Config) *gql.Client {
@@ -244,11 +223,20 @@ func render(cfg Config, week WeeklyItems) string {
 		sections[cfg.LabelSection.RenderOrder] = buf.String()
 	}
 
+	if cfg.Summary.Enabled {
+		var buf strings.Builder
+		fmt.Fprintf(&buf, "\n## %s\n\n", cfg.Summary.Name)
+		fmt.Fprintf(&buf, "%s\n\n", cfg.Summary.Body)
+		sections[cfg.Summary.RenderOrder] = buf.String()
+	}
+
 	var rv strings.Builder
 
-	fmt.Fprintf(&rv, "# Status Report for %s to %s\n\nDate format is YYYY.MM.DD\n\n",
-		week.Start.Format("2006.01.02"),
-		week.End.AddDate(0, 0, -1).Format("2006.01.02"))
+	fmt.Fprintf(&rv, "# Status Report: %s ... %s\n\n## %s\n\n",
+		week.Start.Format("Jan 2, 2006"),
+		week.End.AddDate(0, 0, -1).Format("Jan 2, 2006"),
+		cfg.Team,
+	)
 
 	keys := make([]int, 0, len(sections))
 	for key := range sections {
@@ -263,10 +251,10 @@ func render(cfg Config, week WeeklyItems) string {
 	return rv.String()
 }
 
-func archive(cfg Config, projectId string, client *gql.Client, weeks []WeeklyItems) error {
+func archive(projectId string, client *gql.Client, weeks []WeeklyItems) error {
 	for _, week := range weeks {
 		for _, item := range week.Items {
-			if err := archiveItem(cfg, projectId, item.ID, client); err != nil {
+			if err := archiveItem(projectId, item.ID, client); err != nil {
 				return err
 			}
 		}
